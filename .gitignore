@@ -1,0 +1,18 @@
+# Credentials & Secrets (NEVER commit)
+.env
+credentials/*.json
+!credentials/.gitkeep
+
+# Generated Reports & Logs
+reports/*.xlsx
+logs/*.log*
+logs/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/

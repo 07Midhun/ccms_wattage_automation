@@ -1,0 +1,16 @@
+# Core Google APIs
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0
+
+# Data Processing & Excel Generation
+pandas>=2.1.0
+openpyxl>=3.1.2
+
+# Configuration & Timezone Support
+python-dotenv>=1.0.0
+tzdata>=2024.1
+
+# Testing
+pytest>=8.0.0
