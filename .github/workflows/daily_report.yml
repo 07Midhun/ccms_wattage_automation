@@ -61,6 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p credentials logs reports
+          TRANSPORT="$(printf '%s' "${EMAIL_TRANSPORT}" | tr '[:upper:]' '[:lower:]' | xargs)"
 
           if [[ -n "${GOOGLE_SERVICE_ACCOUNT_JSON}" ]]; then
             printf '%s' "${GOOGLE_SERVICE_ACCOUNT_JSON}" > credentials/service_account.json
@@ -71,9 +72,15 @@ jobs:
 
           if [[ -n "${GOOGLE_TOKEN_JSON}" ]]; then
             printf '%s' "${GOOGLE_TOKEN_JSON}" > credentials/token.json
-          elif [[ "${EMAIL_TRANSPORT}" != "smtp" || -z "${GOOGLE_SERVICE_ACCOUNT_JSON}" ]]; then
-            echo "Error: GOOGLE_TOKEN_JSON is required when using gmail_api or OAuth for Sheets." >&2
-            exit 1
+          else
+            if [[ "${TRANSPORT}" != "smtp" ]]; then
+              echo "Error: Secret GOOGLE_TOKEN_JSON is missing (required when EMAIL_TRANSPORT='${TRANSPORT}')." >&2
+              exit 1
+            fi
+            if [[ -z "${GOOGLE_SERVICE_ACCOUNT_JSON}" ]]; then
+              echo "Error: Secret GOOGLE_SERVICE_ACCOUNT_JSON is missing (needed for read-only Google Sheets access)." >&2
+              exit 1
+            fi
           fi
 
           if [[ -n "${GOOGLE_CREDENTIALS_JSON}" ]]; then
@@ -116,7 +123,7 @@ jobs:
           if [[ -n "${{ inputs.report_date }}" ]]; then
             ARGS+=("--date" "${{ inputs.report_date }}")
           fi
-          python app.py "${ARGS[@]}"
+          python app.py ${ARGS[@]+"${ARGS[@]}"}
 
       - name: Save duplicate-send state cache
         if: always()
