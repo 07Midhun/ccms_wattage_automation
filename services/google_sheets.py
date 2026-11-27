@@ -47,8 +47,9 @@ def col_letter_to_index(col: str) -> int:
     return result - 1
 
 
-# Fixed column positions required by specification (Section 3).
+# Fixed column positions required by specification (Section 3 + SP Number columns).
 REQUIRED_COLUMNS: dict[str, tuple[str, int]] = {
+    "pole_id": ("A", col_letter_to_index("A")),
     "ward_number": ("B", col_letter_to_index("B")),
     "existing_arm_count": ("C", col_letter_to_index("C")),
     "install_lamp_wattage": ("G", col_letter_to_index("G")),
@@ -59,11 +60,13 @@ REQUIRED_COLUMNS: dict[str, tuple[str, int]] = {
     "actual_lamp_wattage_2": ("U", col_letter_to_index("U")),
     "now_lamp_wattage": ("Y", col_letter_to_index("Y")),
     "ccms_id": ("AA", col_letter_to_index("AA")),
+    "actual_sp_no": ("AM", col_letter_to_index("AM")),
 }
 
 MAX_REQUIRED_COL_INDEX = max(idx for _, idx in REQUIRED_COLUMNS.values())
 
 FIELD_DISPLAY_NAMES: dict[str, str] = {
+    "pole_id": "Pole ID",
     "ward_number": "Ward Number",
     "existing_arm_count": "Existing Arm Count",
     "install_lamp_wattage": "Install Lamp Wattage",
@@ -74,6 +77,7 @@ FIELD_DISPLAY_NAMES: dict[str, str] = {
     "actual_lamp_wattage_2": "Actual Lamp Wattage 2",
     "now_lamp_wattage": "Now Lamp Wattage",
     "ccms_id": "CCMS ID",
+    "actual_sp_no": "Actual SP No",
 }
 
 
@@ -92,6 +96,8 @@ class RawSurveyRow:
     actual_lamp_wattage_2: str
     ccms_id: str
     now_lamp_wattage: str = ""
+    pole_id: str = ""
+    actual_sp_no: str = ""
 
 
 def _execute_with_retry(request: Any, operation: str, max_attempts: int = 3) -> Any:
@@ -187,6 +193,8 @@ def parse_sheet_values(values: list[list[Any]], tab_name: str = "AppSheet_Survey
                 actual_lamp_wattage_2=_cell(REQUIRED_COLUMNS["actual_lamp_wattage_2"][1]),
                 now_lamp_wattage=_cell(REQUIRED_COLUMNS["now_lamp_wattage"][1]),
                 ccms_id=_cell(REQUIRED_COLUMNS["ccms_id"][1]),
+                pole_id=_cell(REQUIRED_COLUMNS["pole_id"][1]),
+                actual_sp_no=_cell(REQUIRED_COLUMNS["actual_sp_no"][1]),
             )
         )
 
@@ -254,9 +262,9 @@ class GoogleSheetsReadOnlyClient:
                 f"Available tabs: {sheet_titles}"
             )
 
-        # Read strictly from AppSheet_Survey columns A:AA using FORMATTED_VALUE to preserve string CCMS IDs.
+        # Read strictly from AppSheet_Survey columns A:AM using FORMATTED_VALUE to preserve string CCMS IDs.
         escaped_tab = tab_name.replace("'", "''")
-        range_name = f"'{escaped_tab}'!A:AA"
+        range_name = f"'{escaped_tab}'!A:AM"
         response = _execute_with_retry(
             service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,

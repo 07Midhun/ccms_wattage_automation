@@ -23,6 +23,8 @@ def _row(
     actual_w2: str = "",
     ccms_id: str = "CCMS001",
     now_w: str = "",
+    pole_id: str = "",
+    actual_sp_no: str = "",
 ) -> RawSurveyRow:
     return RawSurveyRow(
         row_number=row_number,
@@ -36,6 +38,8 @@ def _row(
         actual_lamp_wattage_2=actual_w2,
         now_lamp_wattage=now_w,
         ccms_id=ccms_id,
+        pole_id=pole_id,
+        actual_sp_no=actual_sp_no,
     )
 
 
@@ -57,7 +61,7 @@ def test_survey_wrong_two_different_wattages_ignores_install_and_arm_fields() ->
     result = process_survey_rows(rows)
     df = result.dataframe
 
-    assert list(df.columns) == ["Ward No", "CCMS ID", "34W", "60W", "Total Wattage"]
+    assert list(df.columns) == ["Ward No", "Switch Point (SP) Number", "CCMS ID", "34W", "60W", "Total SP", "Total Wattage"]
     assert df.loc[0, "34W"] == 1
     assert df.loc[0, "60W"] == 1
     assert df.loc[0, "Total Wattage"] == 94
@@ -77,7 +81,7 @@ def test_survey_wrong_identical_wattages_counts_both_lamps() -> None:
     result = process_survey_rows(rows)
     df = result.dataframe
 
-    assert list(df.columns) == ["Ward No", "CCMS ID", "34W", "Total Wattage"]
+    assert list(df.columns) == ["Ward No", "Switch Point (SP) Number", "CCMS ID", "34W", "Total SP", "Total Wattage"]
     assert df.loc[0, "34W"] == 2
     assert df.loc[0, "Total Wattage"] == 68
 
@@ -96,7 +100,7 @@ def test_survey_wrong_one_blank_actual_wattage() -> None:
     result = process_survey_rows(rows)
     df = result.dataframe
 
-    assert list(df.columns) == ["Ward No", "CCMS ID", "45W", "Total Wattage"]
+    assert list(df.columns) == ["Ward No", "Switch Point (SP) Number", "CCMS ID", "45W", "Total SP", "Total Wattage"]
     assert df.loc[0, "45W"] == 1
     assert df.loc[0, "Total Wattage"] == 45
 
@@ -156,7 +160,18 @@ def test_consolidation_same_ward_and_separate_wards_and_dynamic_sorting() -> Non
     result = process_survey_rows(rows)
     df = result.dataframe
 
-    assert list(df.columns) == ["Ward No", "CCMS ID", "18W", "34W", "45W", "60W", "120W", "Total Wattage"]
+    assert list(df.columns) == [
+        "Ward No",
+        "Switch Point (SP) Number",
+        "CCMS ID",
+        "18W",
+        "34W",
+        "45W",
+        "60W",
+        "120W",
+        "Total SP",
+        "Total Wattage",
+    ]
     assert list(zip(df["Ward No"], df["CCMS ID"])) == [
         ("2", "CCMS009"),
         ("12", "CCMS001"),
@@ -224,6 +239,35 @@ def test_wattage_priority_t_u_then_now_lamp_y_then_install_g_regardless_of_s() -
     assert (by_ccms["C2"]["60W"], by_ccms["C2"]["Total Wattage"]) == (3, 180)
     assert (by_ccms["C3"]["40W"], by_ccms["C3"]["Total Wattage"]) == (2, 80)
     assert (by_ccms["C4"]["78W"], by_ccms["C4"]["Total Wattage"]) == (2, 156)
+
+
+def test_sp_number_extraction_priority_and_deduplication_without_changing_wattages() -> None:
+    rows = [
+        # Row 2 & 3: Same Ward+CCMS, '0082' in AM vs 'SP082' in A -> both normalize to '82' and deduplicate
+        _row(2, ward="W75", existing_arm="1", install_w="34W", arm_status="CORRECT", ccms_id="CCMS001", pole_id="GBA-SNL-W75-P2015-SP082", actual_sp_no=""),
+        _row(3, ward="W75", existing_arm="2", install_w="34W", arm_status="CORRECT", ccms_id="CCMS001", pole_id="GBA-SNL-W75-P2016-SP082", actual_sp_no="0082"),
+        # Row 4: AM actual_sp_no takes priority over col A pole_id and strips leading zeros ('003' -> '3')
+        _row(4, ward="W75", actual_w1="60W", ccms_id="CCMS002", pole_id="GBA-SNL-W75-P2020-SP117", actual_sp_no="003"),
+        # Row 5: Missing SP in both AM and A -> still keeps wattage row intact with empty SP
+        _row(5, ward="W75", actual_w1="40W", ccms_id="CCMS003", pole_id="GBA-SNL-W75-P2099", actual_sp_no=""),
+        # Row 6: Same Ward+CCMS as CCMS001, skipped for wattage (blank N & '-'), must still contribute SP129!
+        _row(6, ward="W75", existing_arm="", install_w="-", arm_status="", ccms_id="CCMS001", pole_id="GBA-SNL-W75-P2189-SP129", actual_sp_no=""),
+    ]
+    result = process_survey_rows(rows)
+    df = result.dataframe
+
+    by_ccms = {r["CCMS ID"]: r for _, r in df.iterrows()}
+    assert by_ccms["CCMS001"]["Switch Point (SP) Number"] == "82, 129"
+    assert by_ccms["CCMS001"]["Total SP"] == 2
+    assert by_ccms["CCMS001"]["Total Wattage"] == 102
+    assert by_ccms["CCMS002"]["Switch Point (SP) Number"] == "3"
+    assert by_ccms["CCMS002"]["Total SP"] == 1
+    assert by_ccms["CCMS002"]["Total Wattage"] == 60
+    assert by_ccms["CCMS003"]["Switch Point (SP) Number"] == ""
+    assert by_ccms["CCMS003"]["Total SP"] == 0
+    assert by_ccms["CCMS003"]["Total Wattage"] == 40
+    assert result.grand_total_sp == 3
+    assert result.grand_total_wattage == 202
 
 
 def test_all_invalid_rows_raises_processing_error(tmp_path: Path) -> None:

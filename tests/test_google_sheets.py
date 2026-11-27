@@ -64,7 +64,7 @@ def test_parse_sheet_values_preserves_ccms_string_and_skips_blank_rows() -> None
 
 
 def test_parse_sheet_values_missing_required_columns_raises() -> None:
-    truncated_header = make_header_row()[:26]  # Drops column AA (CCMS ID)
+    truncated_header = make_header_row()[:26]  # Drops column AA (CCMS ID) and AM (Actual SP No)
     with pytest.raises(MissingRequiredColumnsError, match="AA \\(CCMS ID\\)"):
         parse_sheet_values([truncated_header, [""] * 26])
 
@@ -77,7 +77,7 @@ def test_parse_sheet_values_empty_sheet_raises() -> None:
         parse_sheet_values([make_header_row()])
 
     with pytest.raises(EmptySpreadsheetError):
-        parse_sheet_values([make_header_row(), [""] * 27])
+        parse_sheet_values([make_header_row(), [""] * 39])
 
 
 def test_fetch_survey_data_reads_only_appsheet_survey_tab(tmp_path: Path) -> None:
@@ -119,7 +119,7 @@ def test_fetch_survey_data_reads_only_appsheet_survey_tab(tmp_path: Path) -> Non
     # Verify only read calls occurred and only on AppSheet_Survey
     mock_spreadsheets.values.return_value.get.assert_called_once_with(
         spreadsheetId="sheet-123",
-        range="'AppSheet_Survey'!A:AA",
+        range="'AppSheet_Survey'!A:AM",
         valueRenderOption="FORMATTED_VALUE",
     )
     mock_spreadsheets.values.return_value.update.assert_not_called()
@@ -141,16 +141,18 @@ def test_fetch_survey_data_missing_tab_raises(tmp_path: Path) -> None:
 
 
 def test_fixed_column_indices_match_spec() -> None:
-    assert REQUIRED_COLUMNS["ward_number"][1] == 1       # B
-    assert REQUIRED_COLUMNS["existing_arm_count"][1] == 2  # C
-    assert REQUIRED_COLUMNS["install_lamp_wattage"][1] == 6  # G
-    assert REQUIRED_COLUMNS["arm_count_status"][1] == 13  # N
-    assert REQUIRED_COLUMNS["actual_arm_count"][1] == 14  # O
+    assert REQUIRED_COLUMNS["pole_id"][1] == 0                # A
+    assert REQUIRED_COLUMNS["ward_number"][1] == 1            # B
+    assert REQUIRED_COLUMNS["existing_arm_count"][1] == 2     # C
+    assert REQUIRED_COLUMNS["install_lamp_wattage"][1] == 6   # G
+    assert REQUIRED_COLUMNS["arm_count_status"][1] == 13      # N
+    assert REQUIRED_COLUMNS["actual_arm_count"][1] == 14      # O
     assert REQUIRED_COLUMNS["survey_lamp_wattage_status"][1] == 18  # S
-    assert REQUIRED_COLUMNS["actual_lamp_wattage_1"][1] == 19  # T
-    assert REQUIRED_COLUMNS["actual_lamp_wattage_2"][1] == 20  # U
-    assert REQUIRED_COLUMNS["now_lamp_wattage"][1] == 24       # Y
-    assert REQUIRED_COLUMNS["ccms_id"][1] == 26                # AA
+    assert REQUIRED_COLUMNS["actual_lamp_wattage_1"][1] == 19 # T
+    assert REQUIRED_COLUMNS["actual_lamp_wattage_2"][1] == 20 # U
+    assert REQUIRED_COLUMNS["now_lamp_wattage"][1] == 24      # Y
+    assert REQUIRED_COLUMNS["ccms_id"][1] == 26               # AA
+    assert REQUIRED_COLUMNS["actual_sp_no"][1] == 38          # AM
 
 
 def test_normalize_spreadsheet_id_strips_url_and_edit_suffix() -> None:

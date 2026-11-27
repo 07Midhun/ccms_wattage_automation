@@ -16,6 +16,8 @@ validation_logger = logging.getLogger("ccms_validation")
 _WATTAGE_PATTERN = re.compile(r"^\s*([+-]?\d+(?:\.\d+)?)\s*[wW]?\s*$")
 _INT_PATTERN = re.compile(r"^\s*([+-]?\d+)(?:\.0+)?\s*$")
 _NATURAL_SPLIT_PATTERN = re.compile(r"(\d+)")
+_SP_POLE_PATTERN = re.compile(r"SP[-_\s]*(\d+)", re.IGNORECASE)
+_SP_DIRECT_NUM_PATTERN = re.compile(r"^\s*(?:SP[-_\s]*)?(\d+)(?:\.0+)?\s*$", re.IGNORECASE)
 
 WattageNumber = int | float
 
@@ -47,6 +49,7 @@ class ProcessedReportData:
     skipped_rows: int
     consolidated_rows: int
     grand_total_wattage: WattageNumber
+    grand_total_sp: int = 0
     validation_issues: list[ValidationIssue] = field(default_factory=list)
 
 
@@ -95,6 +98,33 @@ def format_wattage_label(wattage: WattageNumber) -> str:
     if isinstance(wattage, float) and wattage.is_integer():
         return f"{int(wattage)}W"
     return f"{wattage}W"
+
+
+def extract_sp_number(actual_sp_no: str, pole_id: str) -> str:
+    """Extract normalized Switch Point (SP) number (no leading zeros) from AM first, else A.
+
+    Example: 'GBA-SNL-W75-P2015-SP082' or '0082' -> '82'.
+    Returns '' if neither column contains a valid SP number.
+    """
+    raw_am = (actual_sp_no or "").strip()
+    if raw_am:
+        direct_match = _SP_DIRECT_NUM_PATTERN.match(raw_am)
+        if direct_match:
+            return str(int(direct_match.group(1)))
+
+    raw_pole = (pole_id or "").strip()
+    if raw_pole:
+        pole_match = _SP_POLE_PATTERN.search(raw_pole)
+        if pole_match:
+            return str(int(pole_match.group(1)))
+
+    return ""
+
+
+def _consolidate_sp_numbers(sp_values: list[str]) -> tuple[str, int]:
+    """Deduplicate non-empty SP numbers for a Ward+CCMS group and return (joined_text, count)."""
+    unique = sorted({val for val in sp_values if val}, key=_natural_sort_key)
+    return ", ".join(unique), len(unique)
 
 
 def _natural_sort_key(value: str) -> tuple[tuple[tuple[int, int | str], ...], str]:
@@ -277,10 +307,18 @@ def process_survey_rows(rows: list[RawSurveyRow]) -> ProcessedReportData:
 
     issues: list[ValidationIssue] = []
     contributions: list[tuple[str, str, WattageNumber, int]] = []
+    sp_by_group: dict[tuple[str, str], list[str]] = {}
     valid_row_count = 0
     skipped_row_count = 0
 
     for row in rows:
+        ward_key = row.ward_number.strip()
+        ccms_key = row.ccms_id.strip()
+        if ward_key and ccms_key:
+            sp_num = extract_sp_number(row.actual_sp_no, row.pole_id)
+            if sp_num:
+                sp_by_group.setdefault((ward_key, ccms_key), []).append(sp_num)
+
         row_items = _extract_row_contributions(row, issues)
         if row_items:
             contributions.extend(row_items)
@@ -328,6 +366,12 @@ def process_survey_rows(rows: list[RawSurveyRow]) -> ProcessedReportData:
         pivoted["Total Wattage"] = total_series.round(2)
 
     pivoted = pivoted.reset_index()
+    consolidated_sp_pairs = [
+        _consolidate_sp_numbers(sp_by_group.get((str(w), str(c)), []))
+        for w, c in zip(pivoted["ward_number"], pivoted["ccms_id"])
+    ]
+    pivoted["Switch Point (SP) Number"] = [pair[0] for pair in consolidated_sp_pairs]
+    pivoted["Total SP"] = [pair[1] for pair in consolidated_sp_pairs]
     pivoted = pivoted.rename(
         columns={
             "ward_number": "Ward No",
@@ -344,23 +388,25 @@ def process_survey_rows(rows: list[RawSurveyRow]) -> ProcessedReportData:
     pivoted = pivoted.assign(_sort_key=sort_keys).sort_values("_sort_key", kind="mergesort").drop(columns=["_sort_key"])
     pivoted = pivoted.reset_index(drop=True)
 
-    ordered_cols = ["Ward No", "CCMS ID", *wattage_columns, "Total Wattage"]
+    ordered_cols = ["Ward No", "Switch Point (SP) Number", "CCMS ID", *wattage_columns, "Total SP", "Total Wattage"]
     pivoted = pivoted[ordered_cols]
 
     grand_total_raw = pivoted["Total Wattage"].sum()
     grand_total: WattageNumber = (
         int(grand_total_raw) if all_int_wattages else round(float(grand_total_raw), 2)
     )
+    grand_total_sp = int(pivoted["Total SP"].sum())
 
     app_logger.info(
         "Processed %d input rows -> %d valid, %d skipped, %d consolidated (Ward+CCMS) rows, "
-        "%d dynamic wattage categories (%s), grand total=%sW.",
+        "%d dynamic wattage categories (%s), total_sp=%d, grand total=%sW.",
         len(rows),
         valid_row_count,
         skipped_row_count,
         len(pivoted),
         len(wattage_columns),
         ", ".join(wattage_columns),
+        grand_total_sp,
         grand_total,
     )
 
@@ -373,5 +419,6 @@ def process_survey_rows(rows: list[RawSurveyRow]) -> ProcessedReportData:
         skipped_rows=skipped_row_count,
         consolidated_rows=len(pivoted),
         grand_total_wattage=grand_total,
+        grand_total_sp=grand_total_sp,
         validation_issues=issues,
     )

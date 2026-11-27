@@ -73,6 +73,7 @@ def generate_excel_report(
         )
         total_wattage_fmt = '#,##0"W"' if all_int_wattages else '#,##0.##"W"'
         last_col_idx = len(headers)
+        total_sp_col_idx = headers.index("Total SP") + 1 if "Total SP" in headers else None
 
         for row_offset, row_values in enumerate(df.itertuples(index=False, name=None), start=2):
             ws.row_dimensions[row_offset].height = 20
@@ -96,11 +97,28 @@ def generate_excel_report(
                     cell.font = data_font
                     cell.alignment = Alignment(horizontal="center", vertical="center")
                 elif col_idx == 2:
+                    # Switch Point (SP) Number: plain integer if single number, else text.
+                    sp_str = "" if raw_val is None else str(raw_val).strip()
+                    if _is_plain_integer_string(sp_str):
+                        cell.value = int(sp_str)
+                        cell.number_format = "0"
+                    else:
+                        cell.value = sp_str
+                        cell.number_format = "@"
+                    cell.font = data_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_idx == 3:
                     # CCMS ID: always preserve as string.
                     cell.value = str(raw_val)
                     cell.number_format = "@"
                     cell.font = data_font
                     cell.alignment = Alignment(horizontal="left", vertical="center")
+                elif total_sp_col_idx is not None and col_idx == total_sp_col_idx:
+                    # Total SP: count of unique SP numbers in this row.
+                    cell.value = int(raw_val)
+                    cell.number_format = "#,##0"
+                    cell.font = total_font
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
                 elif col_idx == last_col_idx:
                     # Total Wattage: numeric value formatted with 'W' suffix.
                     cell.value = int(raw_val) if all_int_wattages else float(raw_val)
@@ -172,16 +190,27 @@ def validate_workbook(
                 f"Workbook header mismatch. Expected {expected_headers}, got {actual_headers}."
             )
 
+        total_wattage_idx = expected_headers.index("Total Wattage")
+        total_sp_idx = expected_headers.index("Total SP") if "Total SP" in expected_headers else None
+
         actual_row_count = 0
         actual_total_wattage = 0.0
+        actual_total_sp = 0
         for row in rows_iter:
             actual_row_count += 1
-            total_cell = row[-1]
+            total_cell = row[total_wattage_idx]
             if total_cell is None:
                 raise ExcelGenerationError(
                     f"Missing Total Wattage value on workbook row {actual_row_count + 1}."
                 )
             actual_total_wattage += float(total_cell)
+            if total_sp_idx is not None:
+                sp_cell = row[total_sp_idx]
+                if sp_cell is None:
+                    raise ExcelGenerationError(
+                        f"Missing Total SP value on workbook row {actual_row_count + 1}."
+                    )
+                actual_total_sp += int(sp_cell)
 
         if actual_row_count != expected_data.consolidated_rows:
             raise ExcelGenerationError(
@@ -192,6 +221,12 @@ def validate_workbook(
             raise ExcelGenerationError(
                 f"Workbook Total Wattage sum mismatch. Expected {expected_data.grand_total_wattage}, "
                 f"got {actual_total_wattage}."
+            )
+
+        if total_sp_idx is not None and actual_total_sp != expected_data.grand_total_sp:
+            raise ExcelGenerationError(
+                f"Workbook Total SP sum mismatch. Expected {expected_data.grand_total_sp}, "
+                f"got {actual_total_sp}."
             )
 
         logger.info(

@@ -14,9 +14,12 @@ def make_sheet_row(
     actual_w2: str = "",
     ccms_id: str = "",
     now_wattage: str = "",
+    pole_id: str = "",
+    actual_sp_no: str = "",
 ) -> list[str]:
-    """Build a 27-column (A..AA) row matching the AppSheet_Survey column positions."""
-    row = [""] * 27
+    """Build a 39-column (A..AM) row matching the AppSheet_Survey column positions."""
+    row = [""] * 39
+    row[0] = pole_id           # A
     row[1] = ward              # B
     row[2] = existing_arm      # C
     row[6] = install_wattage   # G
@@ -27,12 +30,14 @@ def make_sheet_row(
     row[20] = actual_w2        # U
     row[24] = now_wattage      # Y
     row[26] = ccms_id          # AA
+    row[38] = actual_sp_no     # AM
     return row
 
 
 def make_header_row() -> list[str]:
-    """Build the 27-column header row for AppSheet_Survey."""
+    """Build the 39-column header row for AppSheet_Survey."""
     return make_sheet_row(
+        pole_id="Pole ID",
         ward="Ward Number",
         existing_arm="Existing Arm Count",
         install_wattage="Install Lamp Wattage",
@@ -43,4 +48,5 @@ def make_header_row() -> list[str]:
         actual_w2="Actual Lamp Wattage 2",
         now_wattage="Now_lamp_wattage",
         ccms_id="CCMS ID",
+        actual_sp_no="actual_sp_no",
     )
